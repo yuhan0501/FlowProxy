@@ -1,0 +1,334 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { 
+  Table, Input, Select, Button, Space, Typography, Card, Tabs, 
+  Tag, Descriptions, message, Empty, Tooltip 
+} from 'antd';
+import { 
+  CopyOutlined, ClearOutlined, ReloadOutlined, SearchOutlined 
+} from '@ant-design/icons';
+import { RequestRecord, HttpRequest, HttpResponse } from '../../shared/models';
+
+const { Title, Text, Paragraph } = Typography;
+const { Option } = Select;
+
+const Requests: React.FC = () => {
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [selectedRequest, setSelectedRequest] = useState<RequestRecord | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState({ search: '', method: '' });
+
+  useEffect(() => {
+    // 安全检查：如果 preload 未正确注入 electronAPI，则避免整个页面崩溃
+    if (!window.electronAPI) {
+      console.error('electronAPI is not available on window');
+      return;
+    }
+
+    loadRequests();
+    const unsubscribe = window.electronAPI.onNewRequest((record) => {
+      setRequests(prev => [record, ...prev.filter(r => r.id !== record.id)].slice(0, 500));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const loadRequests = async () => {
+    if (!window.electronAPI) {
+      console.error('electronAPI is not available on window');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await window.electronAPI.getRequests(filter.search || filter.method ? filter : undefined);
+      setRequests(data);
+    } catch (error) {
+      console.error('Failed to load requests:', error);
+      message.error('Failed to load requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearRequests = async () => {
+    if (!window.electronAPI) {
+      console.error('electronAPI is not available on window');
+      return;
+    }
+    try {
+      await window.electronAPI.clearRequests();
+      setRequests([]);
+      setSelectedRequest(null);
+      message.success('Requests cleared');
+    } catch (error) {
+      console.error('Failed to clear requests:', error);
+      message.error('Failed to clear requests');
+    }
+  };
+
+  const copyAsCurl = useCallback((record: RequestRecord) => {
+    const req = record.request;
+    let curl = `curl -X ${req.method} '${req.url}'`;
+    
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (!['host', 'content-length'].includes(key.toLowerCase())) {
+        curl += ` \\\n  -H '${key}: ${value}'`;
+      }
+    });
+    
+    if (req.body) {
+      curl += ` \\\n  --data-binary '${req.body.replace(/'/g, "\\'")}'`;
+    }
+    
+    navigator.clipboard.writeText(curl);
+    message.success('Copied as cURL');
+  }, []);
+
+  const copyAsRaw = useCallback((record: RequestRecord) => {
+    const req = record.request;
+    let raw = '';
+    
+    try {
+      const url = new URL(req.url);
+      raw = `${req.method} ${url.pathname}${url.search} HTTP/1.1\n`;
+      raw += `Host: ${url.host}\n`;
+    } catch {
+      raw = `${req.method} ${req.url} HTTP/1.1\n`;
+    }
+    
+    Object.entries(req.headers).forEach(([key, value]) => {
+      if (key.toLowerCase() !== 'host') {
+        raw += `${key}: ${value}\n`;
+      }
+    });
+    
+    if (req.body) {
+      raw += `\n${req.body}`;
+    }
+    
+    navigator.clipboard.writeText(raw);
+    message.success('Copied as raw HTTP');
+  }, []);
+
+  const getMethodColor = (method: string) => {
+    const colors: Record<string, string> = {
+      GET: 'blue', POST: 'green', PUT: 'orange', 
+      DELETE: 'red', PATCH: 'cyan', OPTIONS: 'purple'
+    };
+    return colors[method] || 'default';
+  };
+
+  const getStatusColor = (status?: number) => {
+    if (!status) return 'default';
+    if (status < 300) return 'green';
+    if (status < 400) return 'orange';
+    return 'red';
+  };
+
+  const columns = [
+    {
+      title: 'Method',
+      dataIndex: ['request', 'method'],
+      width: 80,
+      render: (method: string) => <Tag color={getMethodColor(method)}>{method}</Tag>,
+    },
+    {
+      title: 'URL',
+      dataIndex: ['request', 'url'],
+      ellipsis: true,
+      render: (url: string) => (
+        <Tooltip title={url}>
+          <Text style={{ fontSize: '12px' }}>{url}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: 'Status',
+      dataIndex: ['response', 'statusCode'],
+      width: 80,
+      render: (status?: number) => status ? (
+        <Tag color={getStatusColor(status)}>{status}</Tag>
+      ) : <Tag>Pending</Tag>,
+    },
+    {
+      title: 'Duration',
+      dataIndex: 'durationMs',
+      width: 100,
+      render: (ms?: number) => ms ? `${ms}ms` : '-',
+    },
+  ];
+
+  return (
+    <div style={{ display: 'flex', height: 'calc(100vh - 112px)', gap: '16px' }}>
+      {/* Request List */}
+      <Card 
+        style={{ flex: '0 0 50%', display: 'flex', flexDirection: 'column' }}
+        bodyStyle={{ flex: 1, overflow: 'hidden', padding: '12px' }}
+        title={
+          <Space>
+            <Title level={5} style={{ margin: 0 }}>Requests</Title>
+            <Text type="secondary">({requests.length})</Text>
+          </Space>
+        }
+        extra={
+          <Space>
+            <Input
+              placeholder="Search URL..."
+              prefix={<SearchOutlined />}
+              value={filter.search}
+              onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
+              style={{ width: 200 }}
+              onPressEnter={loadRequests}
+            />
+            <Select
+              placeholder="Method"
+              value={filter.method || undefined}
+              onChange={v => setFilter(f => ({ ...f, method: v || '' }))}
+              allowClear
+              style={{ width: 100 }}
+            >
+              {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map(m => (
+                <Option key={m} value={m}>{m}</Option>
+              ))}
+            </Select>
+            <Button icon={<ReloadOutlined />} onClick={loadRequests} />
+            <Button icon={<ClearOutlined />} onClick={clearRequests} danger />
+          </Space>
+        }
+      >
+        <Table
+          dataSource={requests}
+          columns={columns}
+          rowKey="id"
+          size="small"
+          loading={loading}
+          pagination={{ pageSize: 50, showSizeChanger: false }}
+          scroll={{ y: 'calc(100vh - 280px)' }}
+          onRow={(record) => ({
+            onClick: () => setSelectedRequest(record),
+            style: { 
+              cursor: 'pointer',
+              background: selectedRequest?.id === record.id ? '#1f1f1f' : undefined
+            }
+          })}
+        />
+      </Card>
+
+      {/* Request Detail */}
+      <Card 
+        style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+        bodyStyle={{ flex: 1, overflow: 'auto', padding: '12px' }}
+        title="Request Detail"
+        extra={
+          selectedRequest && (
+            <Space>
+              <Button 
+                icon={<CopyOutlined />} 
+                onClick={() => copyAsCurl(selectedRequest)}
+              >
+                Copy as cURL
+              </Button>
+              <Button 
+                icon={<CopyOutlined />} 
+                onClick={() => copyAsRaw(selectedRequest)}
+              >
+                Copy Raw
+              </Button>
+            </Space>
+          )
+        }
+      >
+        {selectedRequest ? (
+          <RequestDetail record={selectedRequest} />
+        ) : (
+          <Empty description="Select a request to view details" />
+        )}
+      </Card>
+    </div>
+  );
+};
+
+const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
+  const { request, response } = record;
+
+  const formatBody = (body?: string, contentType?: string) => {
+    if (!body) return <Text type="secondary">No body</Text>;
+    
+    try {
+      if (contentType?.includes('application/json')) {
+        return (
+          <pre className="code-block">
+            {JSON.stringify(JSON.parse(body), null, 2)}
+          </pre>
+        );
+      }
+    } catch {}
+    
+    return <pre className="code-block">{body}</pre>;
+  };
+
+  const tabs = [
+    {
+      key: 'request',
+      label: 'Request',
+      children: (
+        <>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="Method">{request.method}</Descriptions.Item>
+            <Descriptions.Item label="URL">{request.url}</Descriptions.Item>
+            <Descriptions.Item label="Timestamp">
+              {new Date(request.timestamp).toLocaleString()}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Title level={5} style={{ marginTop: '16px' }}>Headers</Title>
+          <Descriptions column={1} size="small" bordered>
+            {Object.entries(request.headers).map(([key, value]) => (
+              <Descriptions.Item key={key} label={key}>
+                {value}
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+
+          <Title level={5} style={{ marginTop: '16px' }}>Body</Title>
+          {formatBody(request.body, request.headers['content-type'])}
+        </>
+      ),
+    },
+    {
+      key: 'response',
+      label: 'Response',
+      children: response ? (
+        <>
+          <Descriptions column={1} size="small" bordered>
+            <Descriptions.Item label="Status">
+              <Tag color={response.statusCode < 400 ? 'green' : 'red'}>
+                {response.statusCode} {response.statusMessage}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label="Duration">
+              {record.durationMs}ms
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Title level={5} style={{ marginTop: '16px' }}>Headers</Title>
+          <Descriptions column={1} size="small" bordered>
+            {Object.entries(response.headers).map(([key, value]) => (
+              <Descriptions.Item key={key} label={key}>
+                {value}
+              </Descriptions.Item>
+            ))}
+          </Descriptions>
+
+          <Title level={5} style={{ marginTop: '16px' }}>Body</Title>
+          {formatBody(response.body, response.headers['content-type'])}
+        </>
+      ) : (
+        <Empty description="No response yet" />
+      ),
+    },
+  ];
+
+  return <Tabs defaultActiveKey="request" items={tabs} />;
+};
+
+export default Requests;
