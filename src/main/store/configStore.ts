@@ -8,6 +8,7 @@ const DEFAULT_CONFIG: AppConfig = {
   maxRequestRecords: 2000,
   logLevel: 'info',
   httpsMitmEnabled: false,
+  systemProxyEnabled: false,
 };
 
 export class ConfigStore {

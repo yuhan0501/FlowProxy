@@ -18,6 +18,7 @@ const IPC_CHANNELS = {
   FLOW_SAVE: 'flow:save',
   FLOW_DELETE: 'flow:delete',
   FLOW_TOGGLE: 'flow:toggle',
+  FLOW_DEBUG: 'flow:debug',
 
   // 组件管理
   COMPONENTS_GET: 'components:get',
@@ -30,6 +31,9 @@ const IPC_CHANNELS = {
   CERT_GENERATE: 'cert:generate',
   CERT_IMPORT: 'cert:import',
   CERT_INSTALL: 'cert:install',
+  
+  // 系统代理
+  SYSTEM_PROXY_STATUS: 'systemProxy:status',
   
   // 配置
   CONFIG_GET: 'config:get',
@@ -58,6 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFlow: (flow: any) => ipcRenderer.invoke(IPC_CHANNELS.FLOW_SAVE, flow),
   deleteFlow: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.FLOW_DELETE, id),
   toggleFlow: (id: string, enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.FLOW_TOGGLE, id, enabled),
+  debugFlow: (payload: any) => ipcRenderer.invoke(IPC_CHANNELS.FLOW_DEBUG, payload),
   
   // 组件管理
   getComponents: () => ipcRenderer.invoke(IPC_CHANNELS.COMPONENTS_GET),
@@ -70,6 +75,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateCA: () => ipcRenderer.invoke(IPC_CHANNELS.CERT_GENERATE),
   importCA: (payload: { caKeyPem: string; caCertPem: string }) => ipcRenderer.invoke(IPC_CHANNELS.CERT_IMPORT, payload),
   installCA: () => ipcRenderer.invoke(IPC_CHANNELS.CERT_INSTALL),
+
+  // 系统代理
+  systemProxyStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_PROXY_STATUS),
 
   // 配置
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET),
@@ -91,6 +99,7 @@ declare global {
       saveFlow: (flow: any) => Promise<void>;
       deleteFlow: (id: string) => Promise<void>;
       toggleFlow: (id: string, enabled: boolean) => Promise<void>;
+      debugFlow: (payload: any) => Promise<any>;
       getComponents: () => Promise<any[]>;
       saveComponent: (component: any) => Promise<void>;
       deleteComponent: (id: string) => Promise<void>;
@@ -99,6 +108,8 @@ declare global {
       getCertStatus: () => Promise<any>;
       generateCA: () => Promise<any>;
       importCA: (payload: { caKeyPem: string; caCertPem: string }) => Promise<any>;
+      // 系统代理
+      systemProxyStatus: () => Promise<any>;
       // 配置
       getConfig: () => Promise<any>;
       saveConfig: (config: any) => Promise<void>;

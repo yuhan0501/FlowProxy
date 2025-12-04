@@ -1,4 +1,4 @@
-import { RequestRecord, FlowDefinition, ComponentDefinition, AppConfig, ProxyStatus, ComponentDebugRequest, ComponentDebugResult } from '../../shared/models';
+import { RequestRecord, FlowDefinition, ComponentDefinition, AppConfig, ProxyStatus, ComponentDebugRequest, ComponentDebugResult, SystemProxyStatus, CertStatus, CertInstallResult, FlowDebugRequest, FlowDebugResult } from '../../shared/models';
 
 declare global {
   interface Window {
@@ -19,6 +19,7 @@ declare global {
       saveFlow: (flow: FlowDefinition) => Promise<void>;
       deleteFlow: (id: string) => Promise<void>;
       toggleFlow: (id: string, enabled: boolean) => Promise<void>;
+      debugFlow: (request: FlowDebugRequest) => Promise<FlowDebugResult>;
       
       // Component management
       getComponents: () => Promise<ComponentDefinition[]>;
@@ -31,6 +32,9 @@ declare global {
       generateCA: () => Promise<CertStatus>;
       importCA: (payload: { caKeyPem: string; caCertPem: string }) => Promise<CertStatus>;
       installCA: () => Promise<CertInstallResult>;
+
+      // System proxy
+      systemProxyStatus: () => Promise<SystemProxyStatus>;
       
       // Config
       getConfig: () => Promise<AppConfig>;
@@ -38,5 +42,11 @@ declare global {
     };
   }
 }
+
+declare module 'react-ace';
+declare module 'ace-builds/src-noconflict/ace';
+declare module 'ace-builds/src-noconflict/ext-language_tools';
+declare module 'ace-builds/src-noconflict/mode-javascript';
+declare module 'ace-builds/src-noconflict/theme-twilight';
 
 export {};

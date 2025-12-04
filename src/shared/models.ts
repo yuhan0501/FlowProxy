@@ -18,6 +18,7 @@ export interface HttpResponse {
   statusCode: number;
   statusMessage?: string;
   headers: HttpHeaders;
+  // 文本类主体（仅用于展示 / 调试）；二进制内容通常为空
   body?: string;
 }
 
@@ -93,10 +94,24 @@ export interface FlowDefinition {
 // 组件定义
 export type ComponentType = "builtin" | "script";
 
+export type ComponentParamType = 'string' | 'number' | 'boolean' | 'json';
+
+export interface ComponentParamDefinition {
+  name: string;          // 参数字段名，脚本中通过 config[name] 访问
+  label?: string;        // UI 上展示的名称
+  type: ComponentParamType;
+  required?: boolean;
+  defaultValue?: any;
+  description?: string;
+}
+
 export interface ComponentDefinition {
   id: string;
   name: string;
   type: ComponentType;
+  // 可选的参数定义列表，用于生成更友好的配置表单
+  params?: ComponentParamDefinition[];
+  // 旧的 schema 字段，主要用于内置组件的复杂配置（暂时保留）
   schema?: any;
   scriptCode?: string;
   internalName?: string;
@@ -136,6 +151,7 @@ export const IPC_CHANNELS = {
   FLOW_SAVE: 'flow:save',
   FLOW_DELETE: 'flow:delete',
   FLOW_TOGGLE: 'flow:toggle',
+  FLOW_DEBUG: 'flow:debug',
   
   // 组件管理
   COMPONENTS_GET: 'components:get',
@@ -149,6 +165,9 @@ export const IPC_CHANNELS = {
   CERT_IMPORT: 'cert:import',
   CERT_INSTALL: 'cert:install',
   
+  // 系统代理
+  SYSTEM_PROXY_STATUS: 'systemProxy:status',
+  
   // 配置
   CONFIG_GET: 'config:get',
   CONFIG_SAVE: 'config:save',
@@ -161,6 +180,8 @@ export interface AppConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   // 是否启用 HTTPS MITM 解密
   httpsMitmEnabled?: boolean;
+  // 是否自动将系统 HTTP/HTTPS 代理指向 FlowProxy
+  systemProxyEnabled?: boolean;
 }
 
 // 证书状态
@@ -173,6 +194,18 @@ export interface CertStatus {
   // 是否已经安装到系统信任存储（最佳努力检测，可能为 undefined 表示未知）
   systemTrusted?: boolean;
   systemTrustCheckMessage?: string;
+}
+
+// 系统代理状态
+export interface SystemProxyStatus {
+  // 当前系统层面是否配置了 HTTP/HTTPS 代理
+  enabled: boolean;
+  // 是否与 FlowProxy 配置匹配（host=127.0.0.1 && port=proxyPort）
+  matchesConfig: boolean;
+  effectiveHost?: string;
+  effectivePort?: number;
+  source?: string; // scutil / netsh / etc
+  rawText?: string; // 原始检测输出，便于调试
 }
 
 // 导入证书请求（PEM 文本）
@@ -196,6 +229,27 @@ export interface ComponentDebugRequest {
 }
 
 export interface ComponentDebugResult {
+  success: boolean;
+  errorMessage?: string;
+  logs: string[];
+  before: {
+    request: HttpRequest;
+    response?: HttpResponse;
+  };
+  after: {
+    request: HttpRequest;
+    response?: HttpResponse;
+  };
+}
+
+// Flow 调试接口
+export interface FlowDebugRequest {
+  flowId: string;
+  rawHttpText?: string;
+  requestRecordId?: string;
+}
+
+export interface FlowDebugResult {
   success: boolean;
   errorMessage?: string;
   logs: string[];

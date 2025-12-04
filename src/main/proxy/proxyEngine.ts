@@ -33,6 +33,7 @@ export class ProxyEngine {
   private httpsMitmEnabled: boolean;
   private certManager = getCertManager();
   private httpsMitmServers: Map<string, { server: https.Server; port: number }> = new Map();
+  private connections: Set<net.Socket> = new Set();
 
   constructor(options: ProxyEngineOptions) {
     this.port = options.port;
@@ -61,6 +62,14 @@ export class ProxyEngine {
         this.handleRequest(req, res);
       });
 
+      // 跟踪所有连接，便于优雅关闭时快速销毁
+      this.server.on('connection', (socket: net.Socket) => {
+        this.connections.add(socket);
+        socket.on('close', () => {
+          this.connections.delete(socket);
+        });
+      });
+
       // Handle CONNECT method for HTTPS
       this.server.on('connect', (req, clientSocket: net.Socket, head) => {
         this.handleConnect(req, clientSocket, head);
@@ -85,6 +94,16 @@ export class ProxyEngine {
         resolve(true);
         return;
       }
+
+      // 主动销毁所有活动连接，加速 close 完成（尤其是 CONNECT 隧道）
+      for (const socket of this.connections) {
+        try {
+          socket.destroy();
+        } catch (e) {
+          console.error('Error destroying client socket during stop:', e);
+        }
+      }
+      this.connections.clear();
 
       this.server.close(() => {
         this.running = false;
@@ -149,15 +168,15 @@ export class ProxyEngine {
 
       // 转发请求到目标服务器
       const targetUrl = new URL(flowResult.request.url);
-      const response = await this.forwardRequest(flowResult.request, targetUrl);
-      
+      const { response, rawBody } = await this.forwardRequest(flowResult.request, targetUrl);
+ 
       record.response = response;
       record.durationMs = Date.now() - startTime;
       record.matchedFlowId = flowResult.matchedFlowId;
       this.requestStore.add(record);
       this.onRequest?.(record);
-
-      this.sendResponse(clientRes, response);
+ 
+      this.sendResponse(clientRes, response, rawBody);
     } catch (error) {
       console.error('Request handling error:', error);
       clientRes.writeHead(502, { 'Content-Type': 'text/plain' });
@@ -236,15 +255,15 @@ export class ProxyEngine {
       }
 
       const targetUrl = new URL(flowResult.request.url);
-      const response = await this.forwardRequest(flowResult.request, targetUrl);
-
+      const { response, rawBody } = await this.forwardRequest(flowResult.request, targetUrl);
+      
       record.response = response;
       record.durationMs = Date.now() - startTime;
       record.matchedFlowId = flowResult.matchedFlowId;
       this.requestStore.add(record);
       this.onRequest?.(record);
-
-      this.sendResponse(clientRes, response);
+ 
+      this.sendResponse(clientRes, response, rawBody);
     } catch (error) {
       console.error('HTTPS MITM request handling error:', error);
       clientRes.writeHead(502, { 'Content-Type': 'text/plain' });
@@ -286,7 +305,7 @@ export class ProxyEngine {
   private forwardRequest(
     httpRequest: HttpRequest,
     targetUrl: URL
-  ): Promise<HttpResponse> {
+  ): Promise<{ response: HttpResponse; rawBody: Buffer }> {
     return new Promise((resolve, reject) => {
       const isHttps = targetUrl.protocol === 'https:';
       const headers: Record<string, string> = { ...httpRequest.headers };
@@ -314,11 +333,37 @@ export class ProxyEngine {
         const chunks: Buffer[] = [];
         proxyRes.on('data', (chunk) => chunks.push(chunk));
         proxyRes.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+
+          // 根据内容类型和编码决定是否提供可读的 body 字符串
+          const ct = responseHeaders['content-type'] || responseHeaders['Content-Type'] || '';
+          const ce = responseHeaders['content-encoding'] || responseHeaders['Content-Encoding'];
+
+          let body: string | undefined;
+          const isTextLike =
+            !ce && (
+              ct.startsWith('text/') ||
+              ct.includes('json') ||
+              ct.includes('javascript') ||
+              ct.includes('xml') ||
+              ct.includes('x-www-form-urlencoded')
+            );
+
+          if (isTextLike) {
+            body = buffer.toString('utf-8');
+          } else {
+            // 压缩或二进制内容：不提供 body 文本，仅用原始字节透传
+            body = undefined;
+          }
+
           resolve({
-            statusCode: proxyRes.statusCode || 200,
-            statusMessage: proxyRes.statusMessage,
-            headers: responseHeaders,
-            body: Buffer.concat(chunks).toString('utf-8'),
+            response: {
+              statusCode: proxyRes.statusCode || 200,
+              statusMessage: proxyRes.statusMessage,
+              headers: responseHeaders,
+              body,
+            },
+            rawBody: buffer,
           });
         });
       });
@@ -332,11 +377,17 @@ export class ProxyEngine {
     });
   }
 
-  private sendResponse(clientRes: http.ServerResponse, response: HttpResponse): void {
+  private sendResponse(clientRes: http.ServerResponse, response: HttpResponse, rawBody?: Buffer): void {
     clientRes.writeHead(response.statusCode, response.statusMessage, response.headers);
-    if (response.body) {
+
+    if (rawBody) {
+      // 优先使用原始字节，保证二进制 / 压缩内容完全一致
+      clientRes.write(rawBody);
+    } else if (response.body) {
+      // 只在明确是文本类且未压缩时才会有 body 字符串
       clientRes.write(response.body);
     }
+
     clientRes.end();
   }
 

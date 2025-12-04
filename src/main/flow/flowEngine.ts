@@ -38,33 +38,50 @@ export class FlowEngine {
       return { request };
     }
 
+    return this.runFlow(matchedFlow, request, (msg) => {
+      console.log(`[flow:${matchedFlow.id}] ${msg}`);
+    });
+  }
+
+  // 调试单个 Flow，收集日志
+  async debugFlow(flow: FlowDefinition, request: HttpRequest): Promise<{ result: FlowProcessResult; logs: string[] }> {
+    const logs: string[] = [];
+    const result = await this.runFlow(flow, request, (msg) => logs.push(msg));
+    return { result, logs };
+  }
+
+  private async runFlow(
+    flow: FlowDefinition,
+    request: HttpRequest,
+    logger?: (msg: string) => void,
+  ): Promise<FlowProcessResult> {
     const ctx: ComponentContext = {
       request: { ...request },
       response: undefined,
       vars: {},
-      log: (msg) => console.log(`[flow:${matchedFlow.id}] ${msg}`),
+      log: (msg) => logger && logger(msg),
     };
 
-    const entryNode = this.findEntryNode(matchedFlow);
+    const entryNode = this.findEntryNode(flow);
     if (!entryNode) {
-      return { request, matchedFlowId: matchedFlow.id };
+      return { request, matchedFlowId: flow.id };
     }
 
     let currentNodeId: string | null = entryNode.id;
 
     while (currentNodeId) {
-      const node = this.getNode(matchedFlow, currentNodeId);
+      const node = this.getNode(flow, currentNodeId);
       if (!node) break;
 
       switch (node.type) {
         case 'entry':
-          currentNodeId = this.getNextNodeId(matchedFlow, node.id);
+          currentNodeId = this.getNextNodeId(flow, node.id);
           break;
 
         case 'component': {
           const componentNode = node as ComponentNode;
           const result = await this.executeComponentNode(componentNode, ctx);
-          
+
           if (result.request) {
             ctx.request = result.request;
           }
@@ -78,10 +95,10 @@ export class FlowEngine {
             return {
               request: ctx.request,
               response: ctx.response,
-              matchedFlowId: matchedFlow.id,
+              matchedFlowId: flow.id,
             };
           }
-          currentNodeId = this.getNextNodeId(matchedFlow, node.id);
+          currentNodeId = this.getNextNodeId(flow, node.id);
           break;
         }
 
@@ -89,7 +106,7 @@ export class FlowEngine {
           const conditionNode = node as ConditionNode;
           const result = this.evalCondition(conditionNode.expression, ctx);
           currentNodeId = this.getNextNodeIdByLabel(
-            matchedFlow,
+            flow,
             node.id,
             result ? 'true' : 'false'
           );
@@ -102,12 +119,12 @@ export class FlowEngine {
             return {
               request: ctx.request,
               response: ctx.response,
-              matchedFlowId: matchedFlow.id,
+              matchedFlowId: flow.id,
             };
           }
           return {
             request: ctx.request,
-            matchedFlowId: matchedFlow.id,
+            matchedFlowId: flow.id,
           };
         }
       }
@@ -116,7 +133,7 @@ export class FlowEngine {
     return {
       request: ctx.request,
       response: ctx.response,
-      matchedFlowId: matchedFlow.id,
+      matchedFlowId: flow.id,
     };
   }
 

@@ -1,5 +1,5 @@
 import { IpcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, HttpRequest, ComponentContext, ComponentDebugRequest, ComponentDebugResult, CertImportRequest, CertInstallResult } from '../../shared/models';
+import { IPC_CHANNELS, HttpRequest, ComponentContext, ComponentDebugRequest, ComponentDebugResult, CertImportRequest, CertInstallResult, SystemProxyStatus, FlowDebugRequest, FlowDebugResult } from '../../shared/models';
 import { ProxyEngine } from '../proxy/proxyEngine';
 import { RequestStore } from '../store/requestStore';
 import { FlowStore } from '../store/flowStore';
@@ -8,6 +8,7 @@ import { ConfigStore } from '../store/configStore';
 import { executeBuiltinComponent } from '../components/builtins';
 import { debugScriptComponent } from '../components/scriptRunner';
 import { getCertManager } from '../proxy/certManager';
+import { FlowEngine } from '../flow/flowEngine';
 import { v4 as uuidv4 } from 'uuid';
 import { execFile } from 'child_process';
 import * as util from 'util';
@@ -61,6 +62,168 @@ async function checkSystemCertTrust(subjectCN?: string): Promise<{ trusted?: boo
   }
 }
 
+// 根据配置启用或关闭系统级 HTTP/HTTPS 代理
+async function applySystemProxySetting(enabled: boolean, ctx: HandlerContext): Promise<void> {
+  const config = ctx.configStore.getConfig();
+  const port = config.proxyPort;
+
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await execFileAsync('networksetup', ['-listallnetworkservices']);
+      const services = stdout
+        .split('\n')
+        .map((l) => l.trim())
+        // 过滤掉说明性文字和被禁用服务行
+        .filter((l) => l && !l.startsWith('*') && !l.startsWith('An asterisk'));
+
+      for (const service of services) {
+        if (enabled) {
+          await execFileAsync('networksetup', ['-setwebproxy', service, '127.0.0.1', String(port)]);
+          await execFileAsync('networksetup', ['-setsecurewebproxy', service, '127.0.0.1', String(port)]);
+          await execFileAsync('networksetup', ['-setwebproxystate', service, 'on']);
+          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'on']);
+        } else {
+          await execFileAsync('networksetup', ['-setwebproxystate', service, 'off']);
+          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'off']);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to apply macOS system proxy:', error);
+    }
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      if (enabled) {
+        await execFileAsync('netsh', ['winhttp', 'set', 'proxy', `127.0.0.1:${port}`]);
+      } else {
+        await execFileAsync('netsh', ['winhttp', 'reset', 'proxy']);
+      }
+    } catch (error) {
+      console.error('Failed to apply Windows system proxy:', error);
+    }
+    return;
+  }
+
+  // 其他平台暂时不做系统代理配置
+  console.warn('System proxy auto-configuration is not supported on this platform.');
+}
+
+// 检测当前系统代理状态
+async function getSystemProxyStatus(ctx: HandlerContext): Promise<SystemProxyStatus> {
+  const config = ctx.configStore.getConfig();
+  const expectedHost = '127.0.0.1';
+  const expectedPort = config.proxyPort;
+
+  if (process.platform === 'darwin') {
+    try {
+      const { stdout } = await execFileAsync('scutil', ['--proxy']);
+      const lines = stdout.split('\n');
+      const map: Record<string, string> = {};
+      for (const line of lines) {
+        const parts = line.split(':');
+        if (parts.length >= 2) {
+          const key = parts[0].trim();
+          const value = parts.slice(1).join(':').trim();
+          if (key) map[key] = value;
+        }
+      }
+
+      const httpEnable = map['HTTPEnable'] === '1';
+      const httpsEnable = map['HTTPSEnable'] === '1';
+      const host = map['HTTPProxy'] || map['HTTPSProxy'];
+      const portStr = map['HTTPPort'] || map['HTTPSPort'];
+      const port = portStr ? parseInt(portStr, 10) : undefined;
+
+      const enabled = !!(httpEnable || httpsEnable);
+      const matchesConfig = !!(
+        enabled &&
+        host === expectedHost &&
+        port === expectedPort
+      );
+
+      return {
+        enabled,
+        matchesConfig,
+        effectiveHost: host,
+        effectivePort: port,
+        source: 'scutil --proxy',
+        rawText: stdout,
+      };
+    } catch (error: any) {
+      console.error('Failed to detect macOS system proxy:', error);
+      return {
+        enabled: false,
+        matchesConfig: false,
+        source: 'scutil --proxy',
+        rawText: String(error?.message || error),
+      };
+    }
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await execFileAsync('netsh', ['winhttp', 'show', 'proxy']);
+      const direct = stdout.includes('Direct access (no proxy server).');
+      if (direct) {
+        return {
+          enabled: false,
+          matchesConfig: !config.systemProxyEnabled,
+          source: 'netsh winhttp show proxy',
+          rawText: stdout,
+        };
+      }
+
+      // 简单解析 http 代理行
+      let host: string | undefined;
+      let port: number | undefined;
+      const lines = stdout.split('\n');
+      for (const line of lines) {
+        const lower = line.toLowerCase();
+        if (lower.includes('proxy server')) {
+          const match = lower.match(/http=([^:;\s]+):(\d+)/);
+          if (match) {
+            host = match[1];
+            port = parseInt(match[2], 10);
+            break;
+          }
+        }
+      }
+
+      const enabled = !!host && !!port;
+      const matchesConfig = !!(
+        enabled &&
+        host === expectedHost &&
+        port === expectedPort
+      );
+
+      return {
+        enabled,
+        matchesConfig,
+        effectiveHost: host,
+        effectivePort: port,
+        source: 'netsh winhttp show proxy',
+        rawText: stdout,
+      };
+    } catch (error: any) {
+      console.error('Failed to detect Windows system proxy:', error);
+      return {
+        enabled: false,
+        matchesConfig: false,
+        source: 'netsh winhttp show proxy',
+        rawText: String(error?.message || error),
+      };
+    }
+  }
+
+  return {
+    enabled: false,
+    matchesConfig: !config.systemProxyEnabled,
+    source: 'unsupported',
+  };
+}
+
 interface HandlerContext {
   proxyEngine: ProxyEngine;
   requestStore: RequestStore;
@@ -74,7 +237,9 @@ export function setupIpcHandlers(ipcMain: IpcMain, ctx: HandlerContext): void {
   // 代理控制
   ipcMain.handle(IPC_CHANNELS.PROXY_START, async () => {
     try {
-      await ctx.proxyEngine.start();
+      if (!ctx.proxyEngine.isRunning()) {
+        await ctx.proxyEngine.start();
+      }
       return true;
     } catch (error) {
       console.error('Failed to start proxy:', error);
@@ -85,6 +250,18 @@ export function setupIpcHandlers(ipcMain: IpcMain, ctx: HandlerContext): void {
   ipcMain.handle(IPC_CHANNELS.PROXY_STOP, async () => {
     try {
       await ctx.proxyEngine.stop();
+
+      // 停止代理时自动关闭系统代理，并更新配置
+      const currentConfig = ctx.configStore.getConfig();
+      if (currentConfig.systemProxyEnabled) {
+        try {
+          await applySystemProxySetting(false, ctx);
+        } catch (e) {
+          console.error('Failed to disable system proxy on stop:', e);
+        }
+        ctx.configStore.saveConfig({ systemProxyEnabled: false });
+      }
+
       return true;
     } catch (error) {
       console.error('Failed to stop proxy:', error);
@@ -337,17 +514,106 @@ export function setupIpcHandlers(ipcMain: IpcMain, ctx: HandlerContext): void {
     }
   });
 
+  // Flow 调试
+  ipcMain.handle(IPC_CHANNELS.FLOW_DEBUG, async (_event, debugReq: FlowDebugRequest): Promise<FlowDebugResult> => {
+    try {
+      // 获取请求数据
+      let request: HttpRequest;
+      if (debugReq.requestRecordId) {
+        const record = ctx.requestStore.getById(debugReq.requestRecordId);
+        if (!record) {
+          return {
+            success: false,
+            errorMessage: 'Request record not found',
+            logs: [],
+            before: { request: {} as HttpRequest },
+            after: { request: {} as HttpRequest },
+          };
+        }
+        request = record.request;
+      } else if (debugReq.rawHttpText) {
+        request = parseRawHttpRequest(debugReq.rawHttpText);
+      } else {
+        return {
+          success: false,
+          errorMessage: 'No request data provided',
+          logs: [],
+          before: { request: {} as HttpRequest },
+          after: { request: {} as HttpRequest },
+        };
+      }
+
+      const flow = ctx.flowStore.getById(debugReq.flowId);
+      if (!flow) {
+        return {
+          success: false,
+          errorMessage: 'Flow not found',
+          logs: [],
+          before: { request },
+          after: { request },
+        };
+      }
+
+      const engine = new FlowEngine(ctx.flowStore, ctx.componentStore);
+      const { result, logs } = await engine.debugFlow(flow, request);
+
+      return {
+        success: true,
+        logs,
+        before: { request },
+        after: {
+          request: result.request,
+          response: result.response,
+        },
+      };
+    } catch (error) {
+      return {
+        success: false,
+        errorMessage: (error as Error).message,
+        logs: [],
+        before: { request: {} as HttpRequest },
+        after: { request: {} as HttpRequest },
+      };
+    }
+  });
+
   // 配置
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, () => {
     return ctx.configStore.getConfig();
   });
 
-  ipcMain.handle(IPC_CHANNELS.CONFIG_SAVE, (_event, config) => {
+  // 保存配置，并根据配置动态调整运行时行为（HTTPS MITM / System Proxy）
+  ipcMain.handle(IPC_CHANNELS.CONFIG_SAVE, async (_event, config) => {
     ctx.configStore.saveConfig(config);
+
+    const fullConfig = ctx.configStore.getConfig();
+
     // 运行时同步 HTTPS MITM 开关到 ProxyEngine（无需重启）
     if (typeof config?.httpsMitmEnabled === 'boolean') {
       ctx.proxyEngine.setHttpsMitmEnabled(config.httpsMitmEnabled);
     }
+
+    // 根据配置启用/关闭系统代理
+    if (typeof config?.systemProxyEnabled === 'boolean') {
+      try {
+        if (config.systemProxyEnabled) {
+          // 开启系统代理前，确保代理已启动
+          if (!ctx.proxyEngine.isRunning()) {
+            await ctx.proxyEngine.start();
+          }
+          await applySystemProxySetting(true, ctx);
+        } else {
+          await applySystemProxySetting(false, ctx);
+        }
+      } catch (error) {
+        console.error('Failed to apply system proxy setting:', error);
+      }
+    }
+  });
+
+  // 系统代理状态
+  ipcMain.handle(IPC_CHANNELS.SYSTEM_PROXY_STATUS, async () => {
+    return getSystemProxyStatus(ctx);
   });
 }
 

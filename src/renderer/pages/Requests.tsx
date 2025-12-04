@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Table, Input, Select, Button, Space, Typography, Card, Tabs, 
-  Tag, Descriptions, message, Empty, Tooltip 
+  Tag, Descriptions, message, Empty, Tooltip, Collapse 
 } from 'antd';
 import { 
   CopyOutlined, ClearOutlined, ReloadOutlined, SearchOutlined 
@@ -247,23 +247,38 @@ const Requests: React.FC = () => {
   );
 };
 
+const { Panel } = Collapse;
+
 const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
   const { request, response } = record;
 
   const formatBody = (body?: string, contentType?: string) => {
     if (!body) return <Text type="secondary">No body</Text>;
-    
-    try {
-      if (contentType?.includes('application/json')) {
+
+    // JSON pretty-print
+    if (contentType?.includes('application/json')) {
+      try {
+        const parsed = JSON.parse(body);
         return (
-          <pre className="code-block">
-            {JSON.stringify(JSON.parse(body), null, 2)}
+          <pre className="code-block json-body">
+            {JSON.stringify(parsed, null, 2)}
           </pre>
         );
+      } catch {
+        // fall through
       }
-    } catch {}
-    
-    return <pre className="code-block">{body}</pre>;
+    }
+
+    // XML: 简单缩进（不做严格解析）
+    if (contentType?.includes('xml')) {
+      return (
+        <pre className="code-block xml-body">
+          {body}
+        </pre>
+      );
+    }
+
+    return <pre className="code-block plain-body">{body}</pre>;
   };
 
   const tabs = [
@@ -280,14 +295,17 @@ const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
             </Descriptions.Item>
           </Descriptions>
 
-          <Title level={5} style={{ marginTop: '16px' }}>Headers</Title>
-          <Descriptions column={1} size="small" bordered>
-            {Object.entries(request.headers).map(([key, value]) => (
-              <Descriptions.Item key={key} label={key}>
-                {value}
-              </Descriptions.Item>
-            ))}
-          </Descriptions>
+          <Collapse defaultActiveKey={[]} style={{ marginTop: '16px' }}>
+            <Panel header="Headers" key="headers">
+              <Descriptions column={1} size="small" bordered>
+                {Object.entries(request.headers).map(([key, value]) => (
+                  <Descriptions.Item key={key} label={key}>
+                    {value}
+                  </Descriptions.Item>
+                ))}
+              </Descriptions>
+            </Panel>
+          </Collapse>
 
           <Title level={5} style={{ marginTop: '16px' }}>Body</Title>
           {formatBody(request.body, request.headers['content-type'])}
@@ -310,14 +328,17 @@ const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
             </Descriptions.Item>
           </Descriptions>
 
-          <Title level={5} style={{ marginTop: '16px' }}>Headers</Title>
-          <Descriptions column={1} size="small" bordered>
-            {Object.entries(response.headers).map(([key, value]) => (
-              <Descriptions.Item key={key} label={key}>
-                {value}
-              </Descriptions.Item>
-            ))}
-          </Descriptions>
+          <Collapse defaultActiveKey={[]} style={{ marginTop: '16px' }}>
+            <Panel header="Headers" key="headers">
+              <Descriptions column={1} size="small" bordered>
+                {Object.entries(response.headers).map(([key, value]) => (
+                  <Descriptions.Item key={key} label={key}>
+                    {value}
+                  </Descriptions.Item>
+                ))}
+              </Descriptions>
+            </Panel>
+          </Collapse>
 
           <Title level={5} style={{ marginTop: '16px' }}>Body</Title>
           {formatBody(response.body, response.headers['content-type'])}

@@ -17,14 +17,15 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { 
   Card, Button, Space, Typography, message, Drawer, Form, 
-  Input, Select, Switch, Divider, Tag 
+  Input, Select, Switch, Divider, Tag, Modal, Collapse, Descriptions, Tabs 
 } from 'antd';
-import { SaveOutlined, ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons';
-import { FlowDefinition, FlowNode, ComponentDefinition } from '../../shared/models';
+import { SaveOutlined, ArrowLeftOutlined, PlusOutlined, BugOutlined } from '@ant-design/icons';
+import { FlowDefinition, FlowNode, ComponentDefinition, RequestRecord, FlowDebugResult, HttpRequest, HttpResponse } from '../../shared/models';
 import { v4 as uuidv4 } from 'uuid';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { Panel } = Collapse;
 
 // Custom Node Components
 const EntryNodeComponent: React.FC<{ data: any }> = ({ data }) => (
@@ -111,6 +112,13 @@ const FlowEditor: React.FC = () => {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [form] = Form.useForm();
+  const watchedComponentId = Form.useWatch('componentId', form);
+
+  // Flow 调试相关状态
+  const [debugModalVisible, setDebugModalVisible] = useState(false);
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState<string>('');
+  const [debugResult, setDebugResult] = useState<FlowDebugResult | null>(null);
 
   useEffect(() => {
     loadFlow();
@@ -167,13 +175,51 @@ const FlowEditor: React.FC = () => {
   };
 
   const onConnect = useCallback((connection: Connection) => {
+    const sourceNode = nodes.find((n) => n.id === connection.source);
+    const targetNode = nodes.find((n) => n.id === connection.target);
+
+    if (!sourceNode || !targetNode) {
+      return;
+    }
+
+    const outgoingFromSource = edges.filter((e) => e.source === sourceNode.id);
+    const incomingToTarget = edges.filter((e) => e.target === targetNode.id);
+
+    // 规则：Entry 只能有一个下游
+    if (sourceNode.type === 'entry' && outgoingFromSource.length >= 1) {
+      message.warning('Entry 节点只能连接到一个下游节点');
+      return;
+    }
+
+    // 规则：Component 只能有一个上游和一个下游
+    if (sourceNode.type === 'component' && outgoingFromSource.length >= 1) {
+      message.warning('Component 节点只能有一个下游节点');
+      return;
+    }
+    if (targetNode.type === 'component' && incomingToTarget.length >= 1) {
+      message.warning('Component 节点只能有一个上游节点');
+      return;
+    }
+
+    // 规则：Terminator 不允许作为 source（没有下游）
+    if (sourceNode.type === 'terminator') {
+      message.warning('Terminator 节点不能有下游节点');
+      return;
+    }
+
+    // Condition 节点下游可以有多个，这里不限制 outgoing
+
     setEdges((eds) => addEdge({
       ...connection,
       id: uuidv4(),
+      label:
+        connection.sourceHandle === 'true' || connection.sourceHandle === 'false'
+          ? connection.sourceHandle
+          : undefined,
       markerEnd: { type: MarkerType.ArrowClosed },
       style: { stroke: '#555' },
     }, eds));
-  }, []);
+  }, [nodes, edges]);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
@@ -294,6 +340,43 @@ const FlowEditor: React.FC = () => {
     setSelectedNode(null);
   };
 
+  // 调试 Flow：加载请求列表
+  const loadRequestsForDebug = async () => {
+    try {
+      const data = await window.electronAPI.getRequests();
+      setRequests(data);
+    } catch (error) {
+      console.error('Failed to load requests for flow debug:', error);
+    }
+  };
+
+  const openDebugModal = async () => {
+    if (!flow) return;
+    // 先保存当前 Flow，确保调试使用最新配置
+    await saveFlow();
+    setDebugResult(null);
+    setSelectedRequestId('');
+    await loadRequestsForDebug();
+    setDebugModalVisible(true);
+  };
+
+  const runFlowDebug = async () => {
+    if (!flow || !selectedRequestId) {
+      message.warning('Please select a request');
+      return;
+    }
+    try {
+      const result = await window.electronAPI.debugFlow({
+        flowId: flow.id,
+        requestRecordId: selectedRequestId,
+      });
+      setDebugResult(result);
+    } catch (error) {
+      console.error('Flow debug failed:', error);
+      message.error('Flow debug failed');
+    }
+  };
+
   if (!flow) {
     return <div>Loading...</div>;
   }
@@ -326,6 +409,9 @@ const FlowEditor: React.FC = () => {
               <Option value="condition">Condition</Option>
               <Option value="terminator">Terminator</Option>
             </Select>
+            <Button icon={<BugOutlined />} onClick={openDebugModal}>
+              Debug
+            </Button>
             <Button type="primary" icon={<SaveOutlined />} onClick={saveFlow}>
               Save
             </Button>
@@ -341,6 +427,15 @@ const FlowEditor: React.FC = () => {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
+          onEdgeClick={(_, edge) => {
+            Modal.confirm({
+              title: 'Delete this connection?',
+              content: 'This will remove the edge from the flow graph.',
+              okText: 'Delete',
+              okButtonProps: { danger: true },
+              onOk: () => setEdges((eds) => eds.filter((e) => e.id !== edge.id)),
+            });
+          }}
           nodeTypes={nodeTypes}
           fitView
         >
@@ -394,9 +489,36 @@ const FlowEditor: React.FC = () => {
                     ))}
                   </Select>
                 </Form.Item>
-                <Form.Item name={['config']} label="Config (JSON)">
-                  <Input.TextArea rows={6} placeholder='{"key": "value"}' />
-                </Form.Item>
+                {(() => {
+                  const currentComponentId = watchedComponentId || selectedNode.data.componentId;
+                  const compDef = components.find(c => c.id === currentComponentId);
+                  if (compDef && compDef.params && compDef.params.length > 0) {
+                    return (
+                      <>
+                        {compDef.params.map((p) => (
+                          <Form.Item
+                            key={p.name}
+                            name={['config', p.name]}
+                            label={p.label || p.name}
+                            rules={p.required ? [{ required: true, message: `${p.label || p.name} is required` }] : []}
+                          >
+                            {p.type === 'boolean' ? (
+                              <Switch />
+                            ) : (
+                              <Input placeholder={p.description} />
+                            )}
+                          </Form.Item>
+                        ))}
+                      </>
+                    );
+                  }
+                  // 默认回退到 JSON 配置
+                  return (
+                    <Form.Item name={['config']} label="Config (JSON)">
+                      <Input.TextArea rows={6} placeholder='{"key": "value"}' />
+                    </Form.Item>
+                  );
+                })()}
               </>
             )}
 
@@ -420,7 +542,163 @@ const FlowEditor: React.FC = () => {
           </Form>
         )}
       </Drawer>
+
+      <FlowDebugModal
+        open={debugModalVisible}
+        onClose={() => setDebugModalVisible(false)}
+        flow={flow}
+        requests={requests}
+        selectedRequestId={selectedRequestId}
+        onChangeRequest={setSelectedRequestId}
+        result={debugResult}
+        onRun={runFlowDebug}
+      />
     </div>
+  );
+};
+
+const FlowDebugModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  flow: FlowDefinition | null;
+  requests: RequestRecord[];
+  selectedRequestId: string;
+  onChangeRequest: (id: string) => void;
+  result: FlowDebugResult | null;
+  onRun: () => void;
+}> = ({ open, onClose, flow, requests, selectedRequestId, onChangeRequest, result, onRun }) => {
+  if (!flow) return null;
+
+  const formatBody = (body?: string, contentType?: string) => {
+    if (!body) return <Text type="secondary">No body</Text>;
+    if (contentType?.includes('application/json')) {
+      try {
+        const parsed = JSON.parse(body);
+        return <pre className="code-block json-body">{JSON.stringify(parsed, null, 2)}</pre>;
+      } catch {
+        // fall through
+      }
+    }
+    if (contentType?.includes('xml')) {
+      return <pre className="code-block xml-body">{body}</pre>;
+    }
+    return <pre className="code-block plain-body">{body}</pre>;
+  };
+
+  const renderRequestView = (req?: HttpRequest) => {
+    if (!req) return <Text type="secondary">No request</Text>;
+    const ct = req.headers['content-type'] || req.headers['Content-Type'];
+    return (
+      <>
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label="Method">{req.method}</Descriptions.Item>
+          <Descriptions.Item label="URL">{req.url}</Descriptions.Item>
+        </Descriptions>
+        <Collapse defaultActiveKey={[]} style={{ marginTop: 8 }}>
+          <Panel header="Headers" key="headers">
+            <Descriptions column={1} size="small" bordered>
+              {Object.entries(req.headers).map(([key, value]) => (
+                <Descriptions.Item key={key} label={key}>
+                  {value}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </Panel>
+        </Collapse>
+        <Title level={5} style={{ marginTop: 8 }}>Body</Title>
+        {formatBody(req.body, typeof ct === 'string' ? ct : undefined)}
+      </>
+    );
+  };
+
+  const renderResponseView = (res?: HttpResponse) => {
+    if (!res) return <Text type="secondary">No response</Text>;
+    const ct = res.headers['content-type'] || res.headers['Content-Type'];
+    return (
+      <>
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label="Status">
+            <Tag color={res.statusCode < 400 ? 'green' : 'red'}>
+              {res.statusCode} {res.statusMessage}
+            </Tag>
+          </Descriptions.Item>
+        </Descriptions>
+        <Collapse defaultActiveKey={[]} style={{ marginTop: 8 }}>
+          <Panel header="Headers" key="headers">
+            <Descriptions column={1} size="small" bordered>
+              {Object.entries(res.headers).map(([key, value]) => (
+                <Descriptions.Item key={key} label={key}>
+                  {value}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </Panel>
+        </Collapse>
+        <Title level={5} style={{ marginTop: 8 }}>Body</Title>
+        {formatBody(res.body, typeof ct === 'string' ? ct : undefined)}
+      </>
+    );
+  };
+
+  return (
+    <Modal
+      title={`Debug Flow: ${flow.name}`}
+      open={open}
+      onCancel={onClose}
+      width={900}
+      footer={
+        <Button type="primary" onClick={onRun}>Run Debug</Button>
+      }
+    >
+      <Space direction="vertical" style={{ width: '100%' }}>
+        <Card size="small" title="Select Sample Request">
+          <Select
+            style={{ width: '100%' }}
+            placeholder="Select a request"
+            value={selectedRequestId || undefined}
+            onChange={onChangeRequest}
+            showSearch
+            optionFilterProp="children"
+          >
+            {requests.slice(0, 100).map(r => (
+              <Select.Option key={r.id} value={r.id}>
+                {r.request.method} {r.request.url}
+              </Select.Option>
+            ))}
+          </Select>
+        </Card>
+
+        {result && (
+          <Card
+            size="small"
+            title={
+              <Space>
+                Result
+                <Tag color={result.success ? 'green' : 'red'}>
+                  {result.success ? 'Success' : 'Failed'}
+                </Tag>
+              </Space>
+            }
+          >
+            {result.errorMessage && <Text type="danger">{result.errorMessage}</Text>}
+            {result.logs.length > 0 && (
+              <div>
+                <Text strong>Logs:</Text>
+                <pre className="code-block">{result.logs.join('\n')}</pre>
+              </div>
+            )}
+            <Tabs
+              items={[
+                { key: 'before-req', label: 'Before - Request', children: renderRequestView(result.before.request) },
+                { key: 'before-res', label: 'Before - Response', children: renderResponseView(result.before.response) },
+                { key: 'after-req', label: 'After - Request', children: renderRequestView(result.after.request) },
+                { key: 'after-res', label: 'After - Response', children: renderResponseView(result.after.response) },
+              ]}
+            />
+          </Card>
+        )}
+      </Space>
+    </Modal>
   );
 };
 

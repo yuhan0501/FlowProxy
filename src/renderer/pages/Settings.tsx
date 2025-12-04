@@ -117,6 +117,15 @@ const Settings: React.FC = () => {
             <Switch />
           </Form.Item>
 
+          <Form.Item
+            name="systemProxyEnabled"
+            label="System Proxy"
+            valuePropName="checked"
+            extra="Automatically configure system HTTP/HTTPS proxy to FlowProxy"
+          >
+            <Switch />
+          </Form.Item>
+
           <Form.Item>
             <Button type="primary" icon={<SaveOutlined />} onClick={saveConfig} loading={loading}>
               Save Settings
