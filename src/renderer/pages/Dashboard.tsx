@@ -8,10 +8,12 @@ import {
   CloseCircleOutlined 
 } from '@ant-design/icons';
 import { ProxyStatus, FlowDefinition, ComponentDefinition, AppConfig, SystemProxyStatus } from '../../shared/models';
+import { useI18n } from '../i18n';
 
 const { Title, Paragraph } = Typography;
 
 const Dashboard: React.FC = () => {
+  const { t } = useI18n();
   const [status, setStatus] = useState<ProxyStatus>({
     running: false,
     port: 8888,
@@ -84,20 +86,23 @@ const Dashboard: React.FC = () => {
 
   return (
     <div style={{ padding: '8px' }}>
-      <Title level={4} style={{ marginBottom: '24px' }}>Dashboard</Title>
+      <Title level={4} style={{ marginBottom: '24px' }}>
+        {t('dashboard.title')}
+      </Title>
       
       <Alert
-        message="Quick Start"
+        message={t('dashboard.quickStart.title')}
         description={
           <Space direction="vertical">
             <Paragraph style={{ margin: 0 }}>
-              1. Click "Start" in the header to start the proxy server
+              {t('dashboard.quickStart.step1')}
             </Paragraph>
             <Paragraph style={{ margin: 0 }}>
-              2. Configure your system or browser to use HTTP proxy at <strong>127.0.0.1:{status.port}</strong>
+              {t('dashboard.quickStart.step2')}{' '}
+              <strong>127.0.0.1:{status.port}</strong>
             </Paragraph>
             <Paragraph style={{ margin: 0 }}>
-              3. Browse the web and watch requests appear in the "Requests" tab
+              {t('dashboard.quickStart.step3')}
             </Paragraph>
           </Space>
         }
@@ -110,8 +115,8 @@ const Dashboard: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="Proxy Status"
-              value={status.running ? 'Running' : 'Stopped'}
+              title={t('dashboard.card.proxyStatus')}
+              value={status.running ? t('header.status.running') : t('header.status.stopped')}
               prefix={status.running ? 
                 <CheckCircleOutlined style={{ color: '#52c41a' }} /> : 
                 <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
@@ -122,7 +127,7 @@ const Dashboard: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="Total Requests"
+              title={t('dashboard.card.totalRequests')}
               value={status.requestCount}
               prefix={<SwapOutlined />}
             />
@@ -131,7 +136,7 @@ const Dashboard: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="Active Flows"
+              title={t('dashboard.card.activeFlows')}
               value={enabledFlows}
               suffix={`/ ${flows.length}`}
               prefix={<ApartmentOutlined />}
@@ -141,7 +146,7 @@ const Dashboard: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title="Components"
+              title={t('dashboard.card.components')}
               value={components.length}
               prefix={<AppstoreOutlined />}
             />
@@ -151,7 +156,7 @@ const Dashboard: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={12}>
-          <Card title="HTTPS Decryption">
+          <Card title={t('dashboard.httpsDecryption')}>
             <Space direction="vertical">
               <Space align="center">
                 <Switch
@@ -159,17 +164,19 @@ const Dashboard: React.FC = () => {
                   onChange={toggleHttpsMitm}
                 />
                 <Paragraph style={{ margin: 0 }}>
-                  {config?.httpsMitmEnabled ? 'Enabled' : 'Disabled'}
+                  {config?.httpsMitmEnabled
+                    ? t('dashboard.httpsDecryption.enabled')
+                    : t('dashboard.httpsDecryption.disabled')}
                 </Paragraph>
               </Space>
               <Paragraph type="secondary" style={{ margin: 0 }}>
-                Requires trusted Root CA. Manage certificates in Settings → HTTPS Certificate.
+                {t('dashboard.httpsDecryption.hint')}
               </Paragraph>
             </Space>
           </Card>
         </Col>
         <Col span={12}>
-          <Card title="System Proxy">
+          <Card title={t('dashboard.systemProxy')}>
             <Space direction="vertical">
               <Space align="center">
                 <Switch
@@ -177,23 +184,31 @@ const Dashboard: React.FC = () => {
                   onChange={toggleSystemProxy}
                 />
                 <Paragraph style={{ margin: 0 }}>
-                  {config?.systemProxyEnabled ? 'Enabled' : 'Disabled'}
+                  {config?.systemProxyEnabled
+                    ? t('dashboard.systemProxy.enabled')
+                    : t('dashboard.systemProxy.disabled')}
                 </Paragraph>
                 {systemProxyStatus && (
                   systemProxyStatus.matchesConfig ? (
-                    <Tag color="green">OK</Tag>
+                    <Tag color="green">{t('dashboard.systemProxy.status.ok')}</Tag>
                   ) : systemProxyStatus.enabled ? (
-                    <Tag color="orange">Mismatch</Tag>
+                    <Tag color="orange">
+                      {t('dashboard.systemProxy.status.mismatch')}
+                    </Tag>
                   ) : (
-                    <Tag color="default">Off</Tag>
+                    <Tag color="default">
+                      {t('dashboard.systemProxy.status.off')}
+                    </Tag>
                   )
                 )}
               </Space>
               {systemProxyStatus && (
                 <Paragraph type="secondary" style={{ margin: 0 }}>
                   {systemProxyStatus.enabled
-                    ? `Effective: ${systemProxyStatus.effectiveHost || 'unknown'}:${systemProxyStatus.effectivePort || ''}`
-                    : 'No system HTTP/HTTPS proxy configured'}
+                    ? `Effective: ${systemProxyStatus.effectiveHost || 'unknown'}:${
+                        systemProxyStatus.effectivePort || ''
+                      }`
+                    : t('dashboard.systemProxy.noProxy')}
                 </Paragraph>
               )}
             </Space>
@@ -201,13 +216,19 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      <Card title="Proxy Configuration" style={{ marginTop: '24px' }}>
+      <Card title={t('dashboard.proxyConfig')} style={{ marginTop: '24px' }}>
         <Row gutter={[16, 16]}>
           <Col span={12}>
-            <Statistic title="Proxy Address" value={`127.0.0.1:${status.port}`} />
+            <Statistic
+              title={t('dashboard.proxyAddress')}
+              value={`127.0.0.1:${status.port}`}
+            />
           </Col>
           <Col span={12}>
-            <Statistic title="Protocol" value="HTTP / HTTPS (Tunnel)" />
+            <Statistic
+              title={t('dashboard.proxyProtocol')}
+              value="HTTP / HTTPS (Tunnel)"
+            />
           </Col>
         </Row>
       </Card>

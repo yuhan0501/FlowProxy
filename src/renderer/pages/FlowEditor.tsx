@@ -22,6 +22,7 @@ import {
 import { SaveOutlined, ArrowLeftOutlined, PlusOutlined, BugOutlined } from '@ant-design/icons';
 import { FlowDefinition, FlowNode, ComponentDefinition, RequestRecord, FlowDebugResult, HttpRequest, HttpResponse } from '../../shared/models';
 import { v4 as uuidv4 } from 'uuid';
+import { useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -105,6 +106,7 @@ const nodeTypes: NodeTypes = {
 const FlowEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [flow, setFlow] = useState<FlowDefinition | null>(null);
   const [components, setComponents] = useState<ComponentDefinition[]>([]);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -187,23 +189,23 @@ const FlowEditor: React.FC = () => {
 
     // 规则：Entry 只能有一个下游
     if (sourceNode.type === 'entry' && outgoingFromSource.length >= 1) {
-      message.warning('Entry 节点只能连接到一个下游节点');
+      message.warning(t('flowEditor.connect.entry.oneChild'));
       return;
     }
 
     // 规则：Component 只能有一个上游和一个下游
     if (sourceNode.type === 'component' && outgoingFromSource.length >= 1) {
-      message.warning('Component 节点只能有一个下游节点');
+      message.warning(t('flowEditor.connect.component.singleDownstream'));
       return;
     }
     if (targetNode.type === 'component' && incomingToTarget.length >= 1) {
-      message.warning('Component 节点只能有一个上游节点');
+      message.warning(t('flowEditor.connect.component.singleUpstream'));
       return;
     }
 
     // 规则：Terminator 不允许作为 source（没有下游）
     if (sourceNode.type === 'terminator') {
-      message.warning('Terminator 节点不能有下游节点');
+      message.warning(t('flowEditor.connect.terminator.noDownstream'));
       return;
     }
 
@@ -284,9 +286,9 @@ const FlowEditor: React.FC = () => {
 
     try {
       await window.electronAPI.saveFlow(updatedFlow);
-      message.success('Flow saved');
+      message.success(t('flowEditor.save.success'));
     } catch (error) {
-      message.error('Failed to save flow');
+      message.error(t('flowEditor.save.failed'));
     }
   };
 
@@ -329,7 +331,7 @@ const FlowEditor: React.FC = () => {
     }));
     
     setDrawerVisible(false);
-    message.success('Node updated');
+    message.success(t('flowEditor.nodeUpdated'));
   };
 
   const deleteSelectedNode = () => {
@@ -378,7 +380,7 @@ const FlowEditor: React.FC = () => {
   };
 
   if (!flow) {
-    return <div>Loading...</div>;
+    return <div>{t('flowEditor.load.loading')}</div>;
   }
 
   return (
@@ -391,29 +393,29 @@ const FlowEditor: React.FC = () => {
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <Space>
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/flows')}>
-              Back
+              {t('flowEditor.back')}
             </Button>
             <Title level={5} style={{ margin: 0 }}>{flow.name}</Title>
             <Tag color={flow.enabled ? 'green' : 'default'}>
-              {flow.enabled ? 'Enabled' : 'Disabled'}
+              {flow.enabled ? t('flowEditor.enabled') : t('flowEditor.disabled')}
             </Tag>
           </Space>
           <Space>
             <Select 
-              placeholder="Add Node" 
+              placeholder={t('flowEditor.addNode.placeholder')} 
               style={{ width: 150 }}
               onChange={(v) => { if (v) addNode(v); }}
               value={undefined as string | undefined}
             >
-              <Option value="component">Component</Option>
-              <Option value="condition">Condition</Option>
-              <Option value="terminator">Terminator</Option>
+              <Option value="component">{t('flowEditor.addNode.component')}</Option>
+              <Option value="condition">{t('flowEditor.addNode.condition')}</Option>
+              <Option value="terminator">{t('flowEditor.addNode.terminator')}</Option>
             </Select>
             <Button icon={<BugOutlined />} onClick={openDebugModal}>
-              Debug
+              {t('flowEditor.btn.debug')}
             </Button>
             <Button type="primary" icon={<SaveOutlined />} onClick={saveFlow}>
-              Save
+              {t('flowEditor.btn.save')}
             </Button>
           </Space>
         </Space>
@@ -429,9 +431,9 @@ const FlowEditor: React.FC = () => {
           onNodeClick={onNodeClick}
           onEdgeClick={(_, edge) => {
             Modal.confirm({
-              title: 'Delete this connection?',
-              content: 'This will remove the edge from the flow graph.',
-              okText: 'Delete',
+              title: t('flowEditor.edge.delete.confirm.title'),
+              content: t('flowEditor.edge.delete.confirm.content'),
+              okText: t('flowEditor.edge.delete.confirm.ok'),
               okButtonProps: { danger: true },
               onOk: () => setEdges((eds) => eds.filter((e) => e.id !== edge.id)),
             });
@@ -445,36 +447,40 @@ const FlowEditor: React.FC = () => {
       </div>
 
       <Drawer
-        title="Edit Node"
+        title={t('flowEditor.drawer.title')}
         open={drawerVisible}
         onClose={() => setDrawerVisible(false)}
         width={400}
         extra={
           <Space>
-            <Button danger onClick={deleteSelectedNode}>Delete</Button>
-            <Button type="primary" onClick={updateNode}>Save</Button>
+            <Button danger onClick={deleteSelectedNode}>
+              {t('flowEditor.drawer.btn.delete')}
+            </Button>
+            <Button type="primary" onClick={updateNode}>
+              {t('flowEditor.drawer.btn.save')}
+            </Button>
           </Space>
         }
       >
         {selectedNode && (
           <Form form={form} layout="vertical">
-            <Form.Item name="name" label="Name">
+            <Form.Item name="name" label={t('flowEditor.drawer.field.name')}>
               <Input />
             </Form.Item>
 
             {selectedNode.type === 'entry' && (
               <>
-                <Form.Item name={['match', 'methods']} label="Methods">
+                <Form.Item name={['match', 'methods']} label={t('flowEditor.drawer.entry.methods')}>
                   <Select mode="multiple">
                     {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'].map(m => (
                       <Option key={m} value={m}>{m}</Option>
                     ))}
                   </Select>
                 </Form.Item>
-                <Form.Item name={['match', 'hostPatterns']} label="Host Patterns">
+                <Form.Item name={['match', 'hostPatterns']} label={t('flowEditor.drawer.entry.hostPatterns')}>
                   <Select mode="tags" placeholder="e.g., *.example.com" />
                 </Form.Item>
-                <Form.Item name={['match', 'pathPatterns']} label="Path Patterns">
+                <Form.Item name={['match', 'pathPatterns']} label={t('flowEditor.drawer.entry.pathPatterns')}>
                   <Select mode="tags" placeholder="e.g., /api/*" />
                 </Form.Item>
               </>
@@ -482,7 +488,7 @@ const FlowEditor: React.FC = () => {
 
             {selectedNode.type === 'component' && (
               <>
-                <Form.Item name="componentId" label="Component">
+                <Form.Item name="componentId" label={t('flowEditor.drawer.component')}>
                   <Select>
                     {components.map(c => (
                       <Option key={c.id} value={c.id}>{c.name}</Option>
@@ -514,7 +520,7 @@ const FlowEditor: React.FC = () => {
                   }
                   // 默认回退到 JSON 配置
                   return (
-                    <Form.Item name={['config']} label="Config (JSON)">
+                    <Form.Item name={['config']} label={t('flowEditor.drawer.component.configJson')}>
                       <Input.TextArea rows={6} placeholder='{"key": "value"}' />
                     </Form.Item>
                   );
@@ -523,7 +529,10 @@ const FlowEditor: React.FC = () => {
             )}
 
             {selectedNode.type === 'condition' && (
-              <Form.Item name="expression" label="Expression">
+              <Form.Item
+                name="expression"
+                label={t('flowEditor.drawer.condition.expression')}
+              >
                 <Input.TextArea 
                   rows={3} 
                   placeholder='ctx.request.method === "POST"' 
@@ -532,10 +541,14 @@ const FlowEditor: React.FC = () => {
             )}
 
             {selectedNode.type === 'terminator' && (
-              <Form.Item name="mode" label="Mode">
+              <Form.Item name="mode" label={t('flowEditor.drawer.terminator.mode')}>
                 <Select>
-                  <Option value="pass_through">Pass Through</Option>
-                  <Option value="end_with_response">End with Response</Option>
+                  <Option value="pass_through">
+                    {t('flowEditor.drawer.terminator.passThrough')}
+                  </Option>
+                  <Option value="end_with_response">
+                    {t('flowEditor.drawer.terminator.endWithResponse')}
+                  </Option>
                 </Select>
               </Form.Item>
             )}

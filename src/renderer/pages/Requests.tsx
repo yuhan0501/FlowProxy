@@ -7,11 +7,13 @@ import {
   CopyOutlined, ClearOutlined, ReloadOutlined, SearchOutlined 
 } from '@ant-design/icons';
 import { RequestRecord, HttpRequest, HttpResponse } from '../../shared/models';
+import { useI18n } from '../i18n';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
 
 const Requests: React.FC = () => {
+  const { t } = useI18n();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<RequestRecord | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,7 +45,7 @@ const Requests: React.FC = () => {
       setRequests(data);
     } catch (error) {
       console.error('Failed to load requests:', error);
-      message.error('Failed to load requests');
+      message.error(t('requests.load.failed'));
     } finally {
       setLoading(false);
     }
@@ -61,7 +63,7 @@ const Requests: React.FC = () => {
       message.success('Requests cleared');
     } catch (error) {
       console.error('Failed to clear requests:', error);
-      message.error('Failed to clear requests');
+      message.error(t('requests.clear.failed'));
     }
   };
 
@@ -80,7 +82,7 @@ const Requests: React.FC = () => {
     }
     
     navigator.clipboard.writeText(curl);
-    message.success('Copied as cURL');
+    message.success(t('requests.copy.curl.success'));
   }, []);
 
   const copyAsRaw = useCallback((record: RequestRecord) => {
@@ -106,7 +108,7 @@ const Requests: React.FC = () => {
     }
     
     navigator.clipboard.writeText(raw);
-    message.success('Copied as raw HTTP');
+    message.success(t('requests.copy.raw.success'));
   }, []);
 
   const getMethodColor = (method: string) => {
@@ -126,13 +128,13 @@ const Requests: React.FC = () => {
 
   const columns = [
     {
-      title: 'Method',
+      title: t('requests.table.method'),
       dataIndex: ['request', 'method'],
       width: 80,
       render: (method: string) => <Tag color={getMethodColor(method)}>{method}</Tag>,
     },
     {
-      title: 'URL',
+      title: t('requests.table.url'),
       dataIndex: ['request', 'url'],
       ellipsis: true,
       render: (url: string) => (
@@ -142,18 +144,18 @@ const Requests: React.FC = () => {
       ),
     },
     {
-      title: 'Status',
+      title: t('requests.table.status'),
       dataIndex: ['response', 'statusCode'],
       width: 80,
       render: (status?: number) => status ? (
         <Tag color={getStatusColor(status)}>{status}</Tag>
-      ) : <Tag>Pending</Tag>,
+      ) : <Tag>{t('requests.status.pending')}</Tag>,
     },
     {
-      title: 'Duration',
+      title: t('requests.table.duration'),
       dataIndex: 'durationMs',
       width: 100,
-      render: (ms?: number) => ms ? `${ms}ms` : '-',
+      render: (ms?: number) => ms ? `${ms}${t('requests.duration.unit')}` : '-',
     },
   ];
 
@@ -165,14 +167,14 @@ const Requests: React.FC = () => {
         bodyStyle={{ flex: 1, overflow: 'hidden', padding: '12px' }}
         title={
           <Space>
-            <Title level={5} style={{ margin: 0 }}>Requests</Title>
+            <Title level={5} style={{ margin: 0 }}>{t('requests.title')}</Title>
             <Text type="secondary">({requests.length})</Text>
           </Space>
         }
         extra={
           <Space>
             <Input
-              placeholder="Search URL..."
+              placeholder={t('requests.search.placeholder')}
               prefix={<SearchOutlined />}
               value={filter.search}
               onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
@@ -180,7 +182,7 @@ const Requests: React.FC = () => {
               onPressEnter={loadRequests}
             />
             <Select
-              placeholder="Method"
+              placeholder={t('requests.method.placeholder')}
               value={filter.method || undefined}
               onChange={v => setFilter(f => ({ ...f, method: v || '' }))}
               allowClear
@@ -190,8 +192,12 @@ const Requests: React.FC = () => {
                 <Option key={m} value={m}>{m}</Option>
               ))}
             </Select>
-            <Button icon={<ReloadOutlined />} onClick={loadRequests} />
-            <Button icon={<ClearOutlined />} onClick={clearRequests} danger />
+            <Button icon={<ReloadOutlined />} onClick={loadRequests}>
+              {t('requests.btn.refresh')}
+            </Button>
+            <Button icon={<ClearOutlined />} onClick={clearRequests} danger>
+              {t('requests.btn.clear')}
+            </Button>
           </Space>
         }
       >
@@ -217,7 +223,7 @@ const Requests: React.FC = () => {
       <Card 
         style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
         bodyStyle={{ flex: 1, overflow: 'auto', padding: '12px' }}
-        title="Request Detail"
+        title={t('requests.detail.title')}
         extra={
           selectedRequest && (
             <Space>
@@ -225,13 +231,13 @@ const Requests: React.FC = () => {
                 icon={<CopyOutlined />} 
                 onClick={() => copyAsCurl(selectedRequest)}
               >
-                Copy as cURL
+                {t('requests.btn.copyCurl')}
               </Button>
               <Button 
                 icon={<CopyOutlined />} 
                 onClick={() => copyAsRaw(selectedRequest)}
               >
-                Copy Raw
+                {t('requests.btn.copyRaw')}
               </Button>
             </Space>
           )
@@ -240,7 +246,7 @@ const Requests: React.FC = () => {
         {selectedRequest ? (
           <RequestDetail record={selectedRequest} />
         ) : (
-          <Empty description="Select a request to view details" />
+          <Empty description={t('requests.empty.detail')} />
         )}
       </Card>
     </div>
@@ -251,9 +257,10 @@ const { Panel } = Collapse;
 
 const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
   const { request, response } = record;
+  const { t } = useI18n();
 
   const formatBody = (body?: string, contentType?: string) => {
-    if (!body) return <Text type="secondary">No body</Text>;
+    if (!body) return <Text type="secondary">{t('requests.body.none')}</Text>;
 
     // JSON pretty-print
     if (contentType?.includes('application/json')) {
@@ -344,7 +351,7 @@ const RequestDetail: React.FC<{ record: RequestRecord }> = ({ record }) => {
           {formatBody(response.body, response.headers['content-type'])}
         </>
       ) : (
-        <Empty description="No response yet" />
+        <Empty description={t('requests.empty.response')} />
       ),
     },
   ];

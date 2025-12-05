@@ -8,6 +8,7 @@ import 'ace-builds/src-noconflict/theme-twilight';
 import 'ace-builds/src-noconflict/ext-language_tools';
 import { ComponentDefinition, RequestRecord, ComponentDebugResult, HttpRequest, HttpResponse } from '../../shared/models';
 import { v4 as uuidv4 } from 'uuid';
+import { useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -45,6 +46,7 @@ langTools.addCompleter({
 });
 
 const Components: React.FC = () => {
+  const { t } = useI18n();
   const [components, setComponents] = useState<ComponentDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -161,7 +163,10 @@ const Components: React.FC = () => {
   const loadComponents = async () => {
     setLoading(true);
     try { setComponents(await window.electronAPI.getComponents()); }
-    catch (error) { console.error('Failed to load components:', error); }
+    catch (error) {
+      console.error('Failed to load components:', error);
+      message.error(t('components.load.failed'));
+    }
     finally { setLoading(false); }
   };
 
@@ -205,11 +210,14 @@ const Components: React.FC = () => {
         params: (values.params || []).filter((p: any) => p && p.name),
       };
       await window.electronAPI.saveComponent(component);
-      message.success('Component saved');
+      message.success(t('components.save.success'));
       setEditModalVisible(false);
       loadComponents();
       setEditingComponent(component);
-    } catch (error) { console.error('Failed to save component:', error); }
+    } catch (error) {
+      console.error('Failed to save component:', error);
+      message.error(t('components.save.failed'));
+    }
   };
 
   // 在编辑弹窗中直接调试当前脚本（自动保存后打开 Debug）
@@ -232,16 +240,16 @@ const Components: React.FC = () => {
       openDebugModal(component);
     } catch (error) {
       console.error('Failed to save component for debug:', error);
-      message.error('Failed to save component for debug');
+      message.error(t('components.saveForDebug.failed'));
     }
   };
 
   const deleteComponent = async (id: string) => {
     try {
       await window.electronAPI.deleteComponent(id);
-      message.success('Component deleted');
+      message.success(t('components.delete.success'));
       loadComponents();
-    } catch (error) { message.error('Cannot delete builtin component'); }
+    } catch (error) { message.error(t('components.delete.failedBuiltin')); }
   };
 
   const openDebugModal = (component: ComponentDefinition) => {
@@ -262,7 +270,7 @@ const Components: React.FC = () => {
   };
 
   const runDebug = async () => {
-    if (!debugComponent || !selectedRequestId) { message.warning('Please select a request'); return; }
+    if (!debugComponent || !selectedRequestId) { message.warning(t('components.debug.run.needRequest')); return; }
     try {
       let config = {};
       try { config = JSON.parse(debugConfig); } catch {}
@@ -272,16 +280,19 @@ const Components: React.FC = () => {
         requestRecordId: selectedRequestId,
       });
       setDebugResult(result);
-    } catch (error) { message.error('Debug failed'); }
+    } catch (error) { message.error(t('components.debug.run.failed')); }
   };
 
   const columns = [
-    { title: 'Name', dataIndex: 'name', render: (name: string, record: ComponentDefinition) => (
-      <Space><Text>{name}</Text>{record.type === 'builtin' && <Tag color="blue">Builtin</Tag>}</Space>
+    { title: t('components.table.name'), dataIndex: 'name', render: (name: string, record: ComponentDefinition) => (
+      <Space>
+        <Text>{name}</Text>
+        {record.type === 'builtin' && <Tag color="blue">{t('components.type.builtin')}</Tag>}
+      </Space>
     )},
-    { title: 'Type', dataIndex: 'type', width: 100, render: (type: string) => <Tag>{type}</Tag> },
-    { title: 'Description', dataIndex: 'description', ellipsis: true },
-    { title: 'Actions', width: 140, render: (_: any, record: ComponentDefinition) => (
+    { title: t('components.table.type'), dataIndex: 'type', width: 100, render: (type: string) => <Tag>{type}</Tag> },
+    { title: t('components.table.description'), dataIndex: 'description', ellipsis: true },
+    { title: t('components.table.actions'), width: 140, render: (_: any, record: ComponentDefinition) => (
       <Space size={4}>
         <Button
           type="text"
@@ -297,7 +308,7 @@ const Components: React.FC = () => {
               icon={<EditOutlined />}
               onClick={() => openEditModal(record)}
             />
-            <Popconfirm title="Delete this component?" onConfirm={() => deleteComponent(record.id)}>
+            <Popconfirm title={t('components.delete.confirm')} onConfirm={() => deleteComponent(record.id)}>
               <Button
                 type="text"
                 size="small"
@@ -313,36 +324,41 @@ const Components: React.FC = () => {
 
   return (
     <div style={{ padding: '8px' }}>
-      <Card title={<Title level={4} style={{ margin: 0 }}>Components</Title>}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEditModal()}>New Component</Button>}>
+      <Card
+        title={<Title level={4} style={{ margin: 0 }}>{t('components.title')}</Title>}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditModal()}>
+            {t('components.btn.new')}
+          </Button>
+        }>
         <Table dataSource={components} columns={columns} rowKey="id" loading={loading} pagination={false} />
       </Card>
 
       <Modal
-        title={editingComponent ? 'Edit Component' : 'New Component'}
+        title={editingComponent ? t('components.modal.edit.title') : t('components.modal.new.title')}
         open={editModalVisible}
         onCancel={() => setEditModalVisible(false)}
         width={800}
         footer={[
           <Button key="cancel" onClick={() => setEditModalVisible(false)}>
-            Cancel
+            {t('components.modal.btn.cancel')}
           </Button>,
           <Button key="debug" onClick={debugFromEditor}>
-            Debug
+            {t('components.modal.btn.debug')}
           </Button>,
           <Button key="save" type="primary" onClick={saveComponent}>
-            Save
+            {t('components.modal.btn.save')}
           </Button>,
         ]}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="description" label="Description"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="name" label={t('components.form.name')} rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="description" label={t('components.form.description')}><Input.TextArea rows={2} /></Form.Item>
           <Form.Item
             name="scriptCode"
-            label="Script Code"
+            label={t('components.form.scriptCode')}
             rules={[{ required: true }]}
-            tooltip="Write a function run(config, ctx) { ... }"
+            tooltip={t('components.form.scriptCode.tooltip')}
           >
             <AceEditor
               mode="javascript"
@@ -363,9 +379,9 @@ const Components: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item label="Parameters">
+          <Form.Item label={t('components.form.params.title')}>
             <Text type="secondary">
-              Define input parameters for this component. They will be passed as <code>config.&lt;name&gt;</code> into your script.
+              {t('components.form.params.help')}
             </Text>
           </Form.Item>
           <Form.List name="params">
@@ -388,7 +404,7 @@ const Components: React.FC = () => {
                       rules={[{ required: true, message: 'Name is required' }]}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="name" />
+                      <Input placeholder={t('components.form.params.name')} />
                     </Form.Item>
                     <Form.Item
                       {...field}
@@ -396,7 +412,7 @@ const Components: React.FC = () => {
                       fieldKey={[field.fieldKey!, 'label']}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="Label" />
+                      <Input placeholder={t('components.form.params.label')} />
                     </Form.Item>
                     <Form.Item
                       {...field}
@@ -418,7 +434,7 @@ const Components: React.FC = () => {
                       fieldKey={[field.fieldKey!, 'defaultValue']}
                       style={{ marginBottom: 0 }}
                     >
-                      <Input placeholder="Default" />
+                      <Input placeholder={t('components.form.params.default')} />
                     </Form.Item>
                     <Button
                       type="text"
@@ -431,17 +447,19 @@ const Components: React.FC = () => {
                     </Button>
                   </div>
                 ))}
-                <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>Add Parameter</Button>
+                <Button type="dashed" onClick={() => add()} icon={<PlusOutlined />}>
+                  {t('components.form.params.btn.add')}
+                </Button>
               </>
             )}
           </Form.List>
         </Form>
       </Modal>
 
-      <Modal title={`Debug: ${debugComponent?.name}`} open={debugModalVisible} onCancel={() => setDebugModalVisible(false)}
-        width={900} footer={<Button type="primary" onClick={runDebug}>Run Debug</Button>}>
+      <Modal title={`${t('components.debug.titlePrefix')}${debugComponent?.name}`} open={debugModalVisible} onCancel={() => setDebugModalVisible(false)}
+        width={900} footer={<Button type="primary" onClick={runDebug}>{t('components.debug.btn.run')}</Button>}>
         <Space direction="vertical" style={{ width: '100%' }}>
-          <Card size="small" title="Select Sample Request">
+          <Card size="small" title={t('components.debug.sampleRequest')}>
             <Select style={{ width: '100%' }} placeholder="Select a request" value={selectedRequestId || undefined}
               onChange={setSelectedRequestId} showSearch optionFilterProp="children">
               {requests.slice(0, 100).map(r => (
@@ -449,14 +467,14 @@ const Components: React.FC = () => {
               ))}
             </Select>
           </Card>
-          <Card size="small" title="Component Config">
+          <Card size="small" title={t('components.debug.config')}>
             <Input.TextArea rows={3} value={debugConfig} onChange={e => setDebugConfig(e.target.value)} />
           </Card>
           {debugResult && (
-            <Card size="small" title={<Space>Result <Tag color={debugResult.success ? 'green' : 'red'}>{debugResult.success ? 'Success' : 'Failed'}</Tag></Space>}>
+            <Card size="small" title={<Space>{t('components.debug.result')} <Tag color={debugResult.success ? 'green' : 'red'}>{debugResult.success ? t('components.debug.status.success') : t('components.debug.status.failed')}</Tag></Space>}>
               {debugResult.errorMessage && <Text type="danger">{debugResult.errorMessage}</Text>}
               {debugResult.logs.length > 0 && (
-                <div><Text strong>Logs:</Text><pre className="code-block">{debugResult.logs.join('\n')}</pre></div>
+                <div><Text strong>{t('components.debug.logs')}</Text><pre className="code-block">{debugResult.logs.join('\n')}</pre></div>
               )}
               <Tabs
                 items={[

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu } from 'antd';
 import {
@@ -8,24 +8,29 @@ import {
   AppstoreOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
+import { useI18n } from '../i18n';
 
 const { Sider } = Layout;
-
-const menuItems = [
-  { key: '/dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/requests', icon: <SwapOutlined />, label: 'Requests' },
-  { key: '/flows', icon: <ApartmentOutlined />, label: 'Flows' },
-  { key: '/components', icon: <AppstoreOutlined />, label: 'Components' },
-  { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },
-];
 
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useI18n();
 
-  const selectedKey = menuItems.find(item => 
-    location.pathname.startsWith(item.key)
-  )?.key || '/dashboard';
+  const menuItems = useMemo(
+    () => [
+      { key: '/dashboard', icon: <DashboardOutlined />, label: t('nav.dashboard') },
+      { key: '/requests', icon: <SwapOutlined />, label: t('nav.requests') },
+      { key: '/flows', icon: <ApartmentOutlined />, label: t('nav.flows') },
+      { key: '/components', icon: <AppstoreOutlined />, label: t('nav.components') },
+      { key: '/settings', icon: <SettingOutlined />, label: t('nav.settings') },
+    ],
+    [t]
+  );
+
+  const selectedKey =
+    menuItems.find((item) => location.pathname.startsWith(item.key))?.key ||
+    '/dashboard';
 
   return (
     <Sider 

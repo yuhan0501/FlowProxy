@@ -9,12 +9,14 @@ import {
 } from '@ant-design/icons';
 import { FlowDefinition, RequestRecord, FlowDebugResult, HttpRequest, HttpResponse } from '../../shared/models';
 import { v4 as uuidv4 } from 'uuid';
+import { useI18n } from '../i18n';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
 
 const Flows: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [flows, setFlows] = useState<FlowDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -42,7 +44,7 @@ const Flows: React.FC = () => {
       setFlows(data);
     } catch (error) {
       console.error('Failed to load flows:', error);
-      message.error('Failed to load flows');
+      message.error('flows.load.failed');
     } finally {
       setLoading(false);
     }
@@ -82,13 +84,13 @@ const Flows: React.FC = () => {
       };
       
       await window.electronAPI.saveFlow(newFlow);
-      message.success('Flow created');
+      message.success(t('flows.create.success'));
       setModalVisible(false);
       form.resetFields();
       loadFlows();
     } catch (error) {
       console.error('Failed to create flow:', error);
-      message.error('Failed to create flow');
+      message.error(t('flows.create.failed'));
     }
   };
 
@@ -102,7 +104,7 @@ const Flows: React.FC = () => {
       setFlows(flows.map(f => f.id === id ? { ...f, enabled } : f));
     } catch (error) {
       console.error('Failed to toggle flow:', error);
-      message.error('Failed to toggle flow');
+      message.error(t('flows.toggle.failed'));
     }
   };
 
@@ -113,11 +115,11 @@ const Flows: React.FC = () => {
     }
     try {
       await window.electronAPI.deleteFlow(id);
-      message.success('Flow deleted');
+      message.success(t('flows.delete.success'));
       loadFlows();
     } catch (error) {
       console.error('Failed to delete flow:', error);
-      message.error('Failed to delete flow');
+      message.error(t('flows.delete.failed'));
     }
   };
 
@@ -140,7 +142,7 @@ const Flows: React.FC = () => {
 
   const runFlowDebug = async () => {
     if (!debugFlowTarget || !selectedRequestId) {
-      message.warning('Please select a request');
+      message.warning(t('flowDebug.run.needRequest'));
       return;
     }
     try {
@@ -151,7 +153,7 @@ const Flows: React.FC = () => {
       setDebugResult(result);
     } catch (error) {
       console.error('Flow debug failed:', error);
-      message.error('Flow debug failed');
+      message.error(t('flowDebug.run.failed'));
     }
   };
 
@@ -170,17 +172,17 @@ const Flows: React.FC = () => {
     };
     try {
       await window.electronAPI.saveFlow(newFlow);
-      message.success('Flow duplicated');
+      message.success(t('flows.duplicate.success'));
       loadFlows();
     } catch (error) {
       console.error('Failed to duplicate flow:', error);
-      message.error('Failed to duplicate flow');
+      message.error(t('flows.duplicate.failed'));
     }
   };
 
   const columns = [
     {
-      title: 'Enabled',
+      title: t('flows.table.enabled'),
       dataIndex: 'enabled',
       width: 80,
       render: (enabled: boolean, record: FlowDefinition) => (
@@ -192,26 +194,26 @@ const Flows: React.FC = () => {
       ),
     },
     {
-      title: 'Name',
+      title: t('flows.table.name'),
       dataIndex: 'name',
       render: (name: string, record: FlowDefinition) => (
         <a onClick={() => navigate(`/flows/${record.id}`)}>{name}</a>
       ),
     },
     {
-      title: 'Nodes',
+      title: t('flows.table.nodes'),
       dataIndex: 'nodes',
       width: 100,
       render: (nodes: any[]) => <Tag>{nodes.length} nodes</Tag>,
     },
     {
-      title: 'Updated',
+      title: t('flows.table.updated'),
       dataIndex: 'updatedAt',
       width: 180,
       render: (ts: number) => new Date(ts).toLocaleString(),
     },
     {
-      title: 'Actions',
+      title: t('flows.table.actions'),
       width: 200,
       render: (_: any, record: FlowDefinition) => (
         <Space size={4}>
@@ -247,14 +249,14 @@ const Flows: React.FC = () => {
   return (
     <div style={{ padding: '8px' }}>
       <Card
-        title={<Title level={4} style={{ margin: 0 }}>Flows</Title>}
+        title={<Title level={4} style={{ margin: 0 }}>{t('flows.title')}</Title>}
         extra={
           <Button 
             type="primary" 
             icon={<PlusOutlined />}
             onClick={() => setModalVisible(true)}
           >
-            New Flow
+            {t('flows.btn.new')}
           </Button>
         }
       >
@@ -268,7 +270,7 @@ const Flows: React.FC = () => {
       </Card>
 
       <Modal
-        title="Create New Flow"
+        title={t('flows.modal.create.title')}
         open={modalVisible}
         onOk={createFlow}
         onCancel={() => {
@@ -279,8 +281,8 @@ const Flows: React.FC = () => {
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
-            label="Flow Name"
-            rules={[{ required: true, message: 'Please enter flow name' }]}
+            label={t('flows.modal.create.name')}
+            rules={[{ required: true, message: t('flows.modal.create.name.required') }]}
           >
             <Input placeholder="My Flow" />
           </Form.Item>
@@ -313,8 +315,10 @@ const FlowDebugModal: React.FC<{
 }> = ({ open, onClose, flow, requests, selectedRequestId, onChangeRequest, result, onRun }) => {
   if (!flow) return null;
 
+  const { t } = useI18n();
+
   const formatBody = (body?: string, contentType?: string) => {
-    if (!body) return <Text type="secondary">No body</Text>;
+    if (!body) return <Text type="secondary">{t('flowDebug.noBody')}</Text>;
     if (contentType?.includes('application/json')) {
       try {
         const parsed = JSON.parse(body);
@@ -330,7 +334,7 @@ const FlowDebugModal: React.FC<{
   };
 
   const renderRequestView = (req?: HttpRequest) => {
-    if (!req) return <Text type="secondary">No request</Text>;
+    if (!req) return <Text type="secondary">{t('flowDebug.noRequest')}</Text>;
     const ct = req.headers['content-type'] || req.headers['Content-Type'];
     return (
       <>
@@ -356,7 +360,7 @@ const FlowDebugModal: React.FC<{
   };
 
   const renderResponseView = (res?: HttpResponse) => {
-    if (!res) return <Text type="secondary">No response</Text>;
+    if (!res) return <Text type="secondary">{t('flowDebug.noResponse')}</Text>;
     const ct = res.headers['content-type'] || res.headers['Content-Type'];
     return (
       <>
@@ -386,16 +390,16 @@ const FlowDebugModal: React.FC<{
 
   return (
     <Modal
-      title={`Debug Flow: ${flow.name}`}
+      title={`${t('flowDebug.modal.titlePrefix')}${flow.name}`}
       open={open}
       onCancel={onClose}
       width={900}
       footer={
-        <Button type="primary" onClick={onRun}>Run Debug</Button>
+        <Button type="primary" onClick={onRun}>{t('flowDebug.btn.run')}</Button>
       }
     >
       <Space direction="vertical" style={{ width: '100%' }}>
-        <Card size="small" title="Select Sample Request">
+        <Card size="small" title={t('flowDebug.sampleRequest')}>
           <Select
             style={{ width: '100%' }}
             placeholder="Select a request"
@@ -417,9 +421,11 @@ const FlowDebugModal: React.FC<{
             size="small"
             title={
               <Space>
-                Result
+                {t('flowDebug.result')}
                 <Tag color={result.success ? 'green' : 'red'}>
-                  {result.success ? 'Success' : 'Failed'}
+                  {result.success
+                    ? t('flowDebug.status.success')
+                    : t('flowDebug.status.failed')}
                 </Tag>
               </Space>
             }
@@ -427,16 +433,16 @@ const FlowDebugModal: React.FC<{
             {result.errorMessage && <Text type="danger">{result.errorMessage}</Text>}
             {result.logs.length > 0 && (
               <div>
-                <Text strong>Logs:</Text>
+                <Text strong>{t('flowDebug.logs')}</Text>
                 <pre className="code-block">{result.logs.join('\n')}</pre>
               </div>
             )}
             <Tabs
               items={[
-                { key: 'before-req', label: 'Before - Request', children: renderRequestView(result.before.request) },
-                { key: 'before-res', label: 'Before - Response', children: renderResponseView(result.before.response) },
-                { key: 'after-req', label: 'After - Request', children: renderRequestView(result.after.request) },
-                { key: 'after-res', label: 'After - Response', children: renderResponseView(result.after.response) },
+                { key: 'before-req', label: t('flowDebug.before.request'), children: renderRequestView(result.before.request) },
+                { key: 'before-res', label: t('flowDebug.before.response'), children: renderResponseView(result.before.response) },
+                { key: 'after-req', label: t('flowDebug.after.request'), children: renderRequestView(result.after.request) },
+                { key: 'after-res', label: t('flowDebug.after.response'), children: renderResponseView(result.after.response) },
               ]}
             />
           </Card>

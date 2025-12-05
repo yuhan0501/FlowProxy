@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Layout, Button, Space, Tag, Typography } from 'antd';
 import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import { ProxyStatus } from '../../shared/models';
+import { useI18n } from '../i18n';
 
 const { Header: AntHeader } = Layout;
 const { Text } = Typography;
 
 const Header: React.FC = () => {
+  const { t } = useI18n();
   const [status, setStatus] = useState<ProxyStatus>({
     running: false,
     port: 8888,
@@ -61,22 +63,28 @@ const Header: React.FC = () => {
       }}
     >
       <Space className="no-drag">
-        <Text strong style={{ fontSize: '16px', color: '#fff' }}>FlowProxy</Text>
+        <Text strong style={{ fontSize: '16px', color: '#fff' }}>
+          {t('app.title')}
+        </Text>
       </Space>
       
       <Space className="no-drag">
         <Tag color={status.running ? 'green' : 'default'}>
-          {status.running ? 'Running' : 'Stopped'}
+          {status.running ? t('header.status.running') : t('header.status.stopped')}
         </Tag>
-        <Text type="secondary">Port: {status.port}</Text>
-        <Text type="secondary">Requests: {status.requestCount}</Text>
+        <Text type="secondary">
+          {t('header.port')}: {status.port}
+        </Text>
+        <Text type="secondary">
+          {t('header.requests')}: {status.requestCount}
+        </Text>
         <Button
           type={status.running ? 'default' : 'primary'}
           icon={status.running ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
           onClick={toggleProxy}
           loading={loading}
         >
-          {status.running ? 'Stop' : 'Start'}
+          {status.running ? t('header.stop') : t('header.start')}
         </Button>
       </Space>
     </AntHeader>

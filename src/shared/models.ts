@@ -178,6 +178,8 @@ export interface AppConfig {
   proxyPort: number;
   maxRequestRecords: number;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+  // 首选界面语言（可选；未设置时由前端根据系统语言自动选择）
+  language?: 'en' | 'zh-CN';
   // 是否启用 HTTPS MITM 解密
   httpsMitmEnabled?: boolean;
   // 是否自动将系统 HTTP/HTTPS 代理指向 FlowProxy
